@@ -1,6 +1,7 @@
 package trojan
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"trojan/core"
@@ -38,7 +39,12 @@ func AddUser() {
 		return
 	}
 	inputPass := util.Input(fmt.Sprintf("生成随机密码: %s, 使用直接回车, 否则输入自定义密码: ", randomPass), randomPass)
-	if mysql.CreateUser(inputUser, inputPass) == nil {
+	base64Pass := base64.StdEncoding.EncodeToString([]byte(inputPass))
+	if user := mysql.GetUserByPass(base64Pass); user != nil {
+		fmt.Println(util.Yellow("已存在密码为: " + inputPass + " 的用户!"))
+		return
+	}
+	if mysql.CreateUser(inputUser, base64Pass, inputPass) == nil {
 		fmt.Println("新增用户成功!")
 	}
 }
@@ -98,19 +104,20 @@ func CleanData() {
 // UserList 获取用户列表并打印显示
 func UserList(ids ...string) []*core.User {
 	mysql := core.GetMysql()
-	userList := mysql.GetData(ids...)
-	if userList == nil {
-		fmt.Println("连接mysql失败!")
+	userList, err := mysql.GetData(ids...)
+	if err != nil {
+		fmt.Println(err.Error())
 		return nil
 	}
-	domain, err := core.GetValue("domain")
-	if err != nil {
-		domain = ""
-	}
+	domain, port := GetDomainAndPort()
 	for i, k := range userList {
+		pass, err := base64.StdEncoding.DecodeString(k.Password)
+		if err != nil {
+			pass = []byte("")
+		}
 		fmt.Printf("%d.\n", i+1)
 		fmt.Println("用户名: " + k.Username)
-		fmt.Println("密码: " + k.Password)
+		fmt.Println("密码: " + string(pass))
 		fmt.Println("上传流量: " + util.Cyan(util.Bytefmt(k.Upload)))
 		fmt.Println("下载流量: " + util.Cyan(util.Bytefmt(k.Download)))
 		if k.Quota < 0 {
@@ -118,7 +125,7 @@ func UserList(ids ...string) []*core.User {
 		} else {
 			fmt.Println("流量限额: " + util.Cyan(util.Bytefmt(uint64(k.Quota))))
 		}
-		fmt.Println("分享链接: " + util.Green(fmt.Sprintf("trojan://%s@%s:443", k.Password, domain)))
+		fmt.Println("分享链接: " + util.Green(fmt.Sprintf("trojan://%s@%s:%d", string(pass), domain, port)))
 		fmt.Println()
 	}
 	return userList

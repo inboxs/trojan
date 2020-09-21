@@ -2,10 +2,10 @@ package controller
 
 import (
 	"encoding/base64"
-	"fmt"
 	"strconv"
 	"time"
 	"trojan/core"
+	"trojan/trojan"
 )
 
 // UserList 获取用户列表
@@ -13,7 +13,7 @@ func UserList(findUser string) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}
 	defer TimeCost(time.Now(), &responseBody)
 	mysql := core.GetMysql()
-	userList := mysql.GetData()
+	userList, err := mysql.GetData()
 	if findUser != "" {
 		for _, user := range userList {
 			if user.Username == findUser {
@@ -22,16 +22,14 @@ func UserList(findUser string) *ResponseBody {
 			}
 		}
 	}
-	if userList == nil {
-		responseBody.Msg = "连接mysql失败!"
+	if err != nil {
+		responseBody.Msg = err.Error()
 		return &responseBody
 	}
-	domain, err := core.GetValue("domain")
-	if err != nil {
-		domain = ""
-	}
+	domain, port := trojan.GetDomainAndPort()
 	responseBody.Data = map[string]interface{}{
 		"domain":   domain,
+		"port":     port,
 		"userList": userList,
 	}
 	return &responseBody
@@ -42,18 +40,15 @@ func PageUserList(curPage int, pageSize int) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}
 	defer TimeCost(time.Now(), &responseBody)
 	mysql := core.GetMysql()
-	pageData := mysql.PageList(curPage, pageSize)
-	if pageData == nil {
-		responseBody.Msg = "连接mysql失败!"
+	pageData, err := mysql.PageList(curPage, pageSize)
+	if err != nil {
+		responseBody.Msg = err.Error()
 		return &responseBody
 	}
-	domain, err := core.GetValue("domain")
-	if err != nil {
-		domain = ""
-	}
-	fmt.Printf("%+v\n", pageData)
+	domain, port := trojan.GetDomainAndPort()
 	responseBody.Data = map[string]interface{}{
 		"domain":   domain,
+		"port":     port,
 		"pageData": pageData,
 	}
 	return &responseBody
@@ -77,7 +72,11 @@ func CreateUser(username string, password string) *ResponseBody {
 		responseBody.Msg = "Base64解码失败: " + err.Error()
 		return &responseBody
 	}
-	if err := mysql.CreateUser(username, string(pass)); err != nil {
+	if user := mysql.GetUserByPass(password); user != nil {
+		responseBody.Msg = "已存在密码为: " + string(pass) + " 的用户!"
+		return &responseBody
+	}
+	if err := mysql.CreateUser(username, password, string(pass)); err != nil {
 		responseBody.Msg = err.Error()
 	}
 	return &responseBody
@@ -92,9 +91,9 @@ func UpdateUser(id uint, username string, password string) *ResponseBody {
 		return &responseBody
 	}
 	mysql := core.GetMysql()
-	userList := mysql.GetData(strconv.Itoa(int(id)))
-	if userList == nil {
-		responseBody.Msg = "can't connect mysql"
+	userList, err := mysql.GetData(strconv.Itoa(int(id)))
+	if err != nil {
+		responseBody.Msg = err.Error()
 		return &responseBody
 	}
 	if userList[0].Username != username {
@@ -103,15 +102,18 @@ func UpdateUser(id uint, username string, password string) *ResponseBody {
 			return &responseBody
 		}
 	}
-	if userList[0].Username != "admin" {
-		_ = core.DelValue(userList[0].Username + "_pass")
-	}
 	pass, err := base64.StdEncoding.DecodeString(password)
 	if err != nil {
 		responseBody.Msg = "Base64解码失败: " + err.Error()
 		return &responseBody
 	}
-	if err := mysql.UpdateUser(id, username, string(pass)); err != nil {
+	if userList[0].Password != password {
+		if user := mysql.GetUserByPass(password); user != nil {
+			responseBody.Msg = "已存在密码为: " + string(pass) + " 的用户!"
+			return &responseBody
+		}
+	}
+	if err := mysql.UpdateUser(id, username, password, string(pass)); err != nil {
 		responseBody.Msg = err.Error()
 	}
 	return &responseBody

@@ -1,6 +1,7 @@
 package trojan
 
 import (
+	"encoding/base64"
 	"fmt"
 	"trojan/core"
 	"trojan/util"
@@ -12,15 +13,11 @@ var clientPath = "/root/config.json"
 func GenClientJson() {
 	fmt.Println()
 	var user core.User
-	domain, err := core.GetValue("domain")
-	if err != nil {
-		fmt.Println(util.Yellow("无域名记录, 生成的配置文件需手填域名字段(ssl.sni)"))
-		domain = ""
-	}
+	domain, port := GetDomainAndPort()
 	mysql := core.GetMysql()
-	userList := mysql.GetData()
-	if userList == nil {
-		fmt.Println("连接mysql失败!")
+	userList, err := mysql.GetData()
+	if err != nil {
+		fmt.Println(err.Error())
 		return
 	}
 	if len(userList) == 1 {
@@ -33,12 +30,12 @@ func GenClientJson() {
 		}
 		user = *userList[choice-1]
 	}
-	password, err := core.GetValue(user.Username + "_pass")
+	pass, err := base64.StdEncoding.DecodeString(user.Password)
 	if err != nil {
-		fmt.Println(util.Red("无法获取选择用户的原始密码, 生成配置文件失败!"))
+		fmt.Println(util.Red("Base64解码失败: " + err.Error()))
 		return
 	}
-	if !core.WriteClient(password, domain, clientPath) {
+	if !core.WriteClient(port, string(pass), domain, clientPath) {
 		fmt.Println(util.Red("生成配置文件失败!"))
 	} else {
 		fmt.Println("成功生成配置文件: " + util.Green(clientPath))

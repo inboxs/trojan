@@ -5,7 +5,7 @@ import (
 	"trojan/trojan"
 )
 
-// updateCmd represents the update command
+// upgradeCmd represents the update command
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "更新trojan",
